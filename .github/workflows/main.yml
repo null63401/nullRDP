@@ -1,0 +1,43 @@
+name: Setup Windows Runner with RDP
+
+on: [push]
+
+jobs:
+  setup-windows-rdp:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Enable RDP
+        run: |
+          # Включаем RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          # Устанавливаем пароль для пользователя (по умолчанию runneradmin)
+          net user runneradmin SecurePassword123!
+        shell: powershell
+
+      - name: Download and Install Ngrok
+        run: |
+          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive -Path ngrok.zip -DestinationPath .
+          .\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        shell: powershell
+
+      - name: Start Ngrok Tunnel for RDP
+        run: |
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow
+          Start-Sleep -Seconds 10
+          # Получаем публичный URL от Ngrok
+          $response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
+          $public_url = $response.tunnels[0].public_url
+          Write-Output "RDP URL: $public_url"
+          Write-Output "Username: runneradmin"
+          Write-Output "Password: SecurePassword123!"
+        shell: powershell
+
+      - name: Keep Workflow Running
+        run: |
+          Start-Sleep -Seconds 3600 # Держим workflow активным 1 час для подключения
+        shell: powershell

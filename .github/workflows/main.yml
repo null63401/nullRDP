@@ -1,43 +1,71 @@
-name: Setup Windows Runner with RDP
+name: Windows - LiteManager Setup
 
-on: [push]
+on:
+  workflow_dispatch:
 
 jobs:
-  setup-windows-rdp:
+  setup-litemanager:
+    name: Setup LiteManager on Windows
     runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Enable RDP
+      - name: Install Python and pip
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Chocolatey
         run: |
-          # Включаем RDP
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          # Устанавливаем пароль для пользователя (по умолчанию runneradmin)
-          net user runneradmin SecurePassword123!
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
         shell: powershell
 
-      - name: Download and Install Ngrok
+      - name: Download and Install Essentials
         run: |
-          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive -Path ngrok.zip -DestinationPath .
-          .\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+          Invoke-WebRequest -Uri "https://www.litemanager.com/soft/litemanager_5.zip" -OutFile "litemanager.zip"
+          Expand-Archive -Path "litemanager.zip" -DestinationPath "."
+          pip install pyautogui --quiet
+          choco install vcredist-all --no-progress
+          Invoke-WebRequest -Uri "https://telegram.org/dl/desktop/win64" -OutFile "C:\Users\Public\Desktop\Telegram.exe"
+          Invoke-WebRequest -Uri "https://www.rarlab.com/rar/winrar-x64-621.exe" -OutFile "C:\Users\Public\Desktop\Winrar.exe"
+          Invoke-WebRequest -Uri "https://github.com/chieunhatnang/VM-QuickConfig/releases/download/1.6.1/VMQuickConfig.exe" -OutFile "C:\Users\Public\Desktop\VMQuickConfig.exe"
+          Start-Process -FilePath "C:\Users\Public\Desktop\Telegram.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
+          Remove-Item "C:\Users\Public\Desktop\Telegram.exe"
+          Start-Process -FilePath "C:\Users\Public\Desktop\Winrar.exe" -ArgumentList "/S" -Wait
+          Remove-Item "C:\Users\Public\Desktop\Winrar.exe"
+          Remove-Item "C:\Users\Public\Desktop\Epic Games Launcher.lnk" -ErrorAction SilentlyContinue
+          Remove-Item "C:\Users\Public\Desktop\Unity Hub.lnk" -ErrorAction SilentlyContinue
+          net user runneradmin ${{ secrets.RDP_PASSWORD }}
         shell: powershell
 
-      - name: Start Ngrok Tunnel for RDP
+      - name: Download Setup Scripts
         run: |
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow
-          Start-Sleep -Seconds 10
-          # Получаем публичный URL от Ngrok
-          $response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
-          $public_url = $response.tunnels[0].public_url
-          Write-Output "RDP URL: $public_url"
-          Write-Output "Username: runneradmin"
-          Write-Output "Password: SecurePassword123!"
+          Invoke-WebRequest -Uri "https://gitlab.com/chamod12/lm_win-10_github_rdp/-/raw/main/setup.py" -OutFile "setup.py"
+          Invoke-WebRequest -Uri "https://gitlab.com/chamod12/lm_win-10_github_rdp/-/raw/main/show.bat" -OutFile "show.bat"
+          Invoke-WebRequest -Uri "https://gitlab.com/chamod12/changewallpaper-win10/-/raw/main/wall.bat" -OutFile "wall.bat"
+        shell: powershell
+
+      - name: Install LiteManager
+        run: |
+          Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"LiteManager Pro - Server.msi`" /quiet /norestart" -Wait
+          python setup.py
+          cmd /c wall.bat
+        shell: powershell
+
+      - name: Start LiteManager and Show Credentials
+        run: |
+          Start-Process -FilePath "C:\Program Files (x86)\LiteManager Pro - Server\ROMServer.exe" -ArgumentList "/start"
+          cmd /c show.bat
         shell: powershell
 
       - name: Keep Workflow Running
         run: |
-          Start-Sleep -Seconds 3600 # Держим workflow активным 1 час для подключения
+          python loop.py
         shell: powershell
